@@ -3,8 +3,8 @@
 #include "helper.h"
 #include "WriteOutput.h"
 #include <vector>
+#include "monitor.h"
 
-#define NUM_CARS 10
 using namespace std;
 
 struct NarrowBridge
@@ -37,6 +37,7 @@ struct Path
 
 struct Car
 {
+    int carID;
     int travelTime;
     int pathLength;
     vector<Path> path;
@@ -79,6 +80,7 @@ void parseInput() {
     cars.resize(C_AN);
 
     for(int i=0; i< C_AN; i++) {
+        cars[i].carID = i;
         cin >> cars[i].travelTime >> cars[i].pathLength;
         cars[i].path.resize(cars[i].pathLength);
 
@@ -96,12 +98,8 @@ void parseInput() {
     
 }
 
-int main(){
+void printInput(){
 
-    // will parse the input here
-    parseInput();
-
-    // print the parsed input
     cout << "Narrow Bridges: " << endl;
     for (int i = 0; i < narrowBridges.size(); i++) {
         cout << "Travel Time: " << narrowBridges[i].travelTime << " Max Wait Time: " << narrowBridges[i].maxWaitTime << endl;
@@ -125,20 +123,114 @@ int main(){
         }
     }
 
+}
+
+class NarrowBridgeMonitor: public Monitor {
 
 
-    /* pthread_t threads[NUM_CARS];
-    int carID[NUM_CARS];
-    int i;
-    InitWriteOutput();
-    for (i = 0; i < NUM_CARS; i++) {
-        carID[i] = i;
-        pthread_create(&threads[i], NULL, NULL, (void *)&carID[i]); // will put car thread function here
+public:
+    NarrowBridgeMonitor() {
+        
     }
 
+    void pass(int carId, bool carDirection) {
+        __synchronized__;
+        ;
+    }
 
-    for (i = 0; i < NUM_CARS; i++) {
+};
+
+class CrossRoadMonitor: public Monitor {
+
+public:
+    CrossRoadMonitor() {
+        
+    }
+
+    void pass(int carId) {
+        __synchronized__;
+        ;
+    }
+    
+};
+
+
+class FerryMonitor: public Monitor {
+
+public:
+    FerryMonitor() {
+        
+    }
+
+    void pass(int carId) {
+        __synchronized__;
+        ;
+    }
+    
+};
+
+
+
+// car thread function
+void* carThread(void *arg) {
+    
+    Car *car = (Car *)arg;
+
+    for (int i = 0; i < car->path.size(); i++){
+
+        Path path = car->path[i];
+        int carID = car->carID;
+        // travel to the connector
+        WriteOutput(carID, path.connectorType, path.connectorID, TRAVEL);
+
+        // Sleep for TravelTime milliseconds
+        sleep_milli(car->travelTime); 
+
+        // arrive at the connector
+        WriteOutput(carID, path.connectorType, path.connectorID, ARRIVE);
+
+        // pass the connector
+        if (path.connectorType == 'N') {
+            // narrow bridge
+            // narrowBridges[path.connectorID].pass(carID);
+
+        } else if (path.connectorType == 'F') {
+            // ferry
+            // ferries[path.connectorID].pass(carID);
+        } else if (path.connectorType == 'C') {
+            // cross road
+            // crossRoads[path.connectorID].pass(carID);
+        }
+
+
+        
+    }
+
+    return NULL;
+}
+
+int main(){
+
+    // will parse the input here
+    parseInput();
+
+    // print the parsed input
+    printInput();
+
+    InitWriteOutput();
+
+    pthread_t threads[cars.size()]; // car threads array
+
+    for (int i = 0; i < cars.size(); i++) {
+        // Create a thread for each car
+        pthread_create(&threads[i], NULL, carThread, (void *)&cars[i]);
+    }
+
+    // Join threads to make sure all car threads finish before program exits
+    for (int i = 0; i < cars.size(); i++) {
         pthread_join(threads[i], NULL);
-    } */
+    }
+
+    
     return 0;
 }
