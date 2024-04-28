@@ -49,6 +49,10 @@ vector<Ferry> ferries;
 vector<CrossRoad> crossRoads;
 vector<Car> cars;
 
+// global monitor variables
+vector<NarrowBridgeMonitor> narrowBridgeMonitors;
+vector<FerryMonitor> ferryMonitors;
+vector<CrossRoadMonitor> crossRoadMonitors;
 
 // input parsing function
 void parseInput() {
@@ -98,6 +102,7 @@ void parseInput() {
     
 }
 
+
 void printInput(){
 
     cout << "Narrow Bridges: " << endl;
@@ -126,24 +131,36 @@ void printInput(){
 }
 
 class NarrowBridgeMonitor: public Monitor {
-
+    Condition directionChange;
+    int travelTime;
+    int maxWaitTime;
+    int currentDirection; // 0 for one way, 1 for the other
+    int carsInQueue;
+    int waitingCars[2]; // 0 for one way, 1 for the other
 
 public:
-    NarrowBridgeMonitor() {
-        
+    NarrowBridgeMonitor(int _travelTime, int _maxWaitTime) : currentDirection(false), carsInQueue(0), maxWaitTime(_maxWaitTime), directionChange(this) {
+        waitingCars[0] = 0; waitingCars[1] = 0;
     }
 
-    void pass(int carId, bool carDirection) {
+    void pass(Car& car, Path& path) {
         __synchronized__;
-        ;
+        // path will provide the direction, connectorType, connectorID, info
+        int direction = path.from; // 0 for one way, 1 for the other
+        
+
     }
 
 };
 
 class CrossRoadMonitor: public Monitor {
+    int travelTime;
+    int maxWaitTime;
 
 public:
-    CrossRoadMonitor() {
+    CrossRoadMonitor(int travelTime, int maxWaitTime) {
+        this->travelTime = travelTime;
+        this->maxWaitTime = maxWaitTime;
         
     }
 
@@ -156,9 +173,15 @@ public:
 
 
 class FerryMonitor: public Monitor {
+    int travelTime;
+    int maxWaitTime;
+    int capacity;
 
 public:
-    FerryMonitor() {
+    FerryMonitor(int travelTime, int maxWaitTime, int capacity) {
+        this->travelTime = travelTime;
+        this->maxWaitTime = maxWaitTime;
+        this->capacity = capacity;
         
     }
 
@@ -192,14 +215,18 @@ void* carThread(void *arg) {
         // pass the connector
         if (path.connectorType == 'N') {
             // narrow bridge
-            // narrowBridges[path.connectorID].pass(carID);
+            // direction of the path
+            narrowBridgeMonitors[path.connectorID].pass(car, path);
+            printf("Narrow Bridge passing\n");
 
         } else if (path.connectorType == 'F') {
             // ferry
-            // ferries[path.connectorID].pass(carID);
+            ferryMonitors[path.connectorID].pass(carID);
+            printf("Ferry passing\n");
         } else if (path.connectorType == 'C') {
             // cross road
-            // crossRoads[path.connectorID].pass(carID);
+            crossRoadMonitors[path.connectorID].pass(carID);
+            printf("Cross Road passing\n");
         }
 
 
@@ -207,6 +234,20 @@ void* carThread(void *arg) {
     }
 
     return NULL;
+}
+
+void initalizeMonitors() {
+    for (int i = 0; i < narrowBridges.size(); i++) {
+        narrowBridgeMonitors[i] = NarrowBridgeMonitor(narrowBridges[i].travelTime, narrowBridges[i].maxWaitTime);
+    }
+
+    for (int i = 0; i < ferries.size(); i++) {
+        ferryMonitors[i] = FerryMonitor(ferries[i].travelTime, ferries[i].maxWaitTime, ferries[i].capacity);
+    }
+
+    for (int i = 0; i < crossRoads.size(); i++) {
+        crossRoadMonitors[i] = CrossRoadMonitor(crossRoads[i].travelTime, crossRoads[i].maxWaitTime);
+    }
 }
 
 int main(){
@@ -218,6 +259,9 @@ int main(){
     printInput();
 
     InitWriteOutput();
+
+    // initalize the monitors
+    initalizeMonitors();
 
     pthread_t threads[cars.size()]; // car threads array
 

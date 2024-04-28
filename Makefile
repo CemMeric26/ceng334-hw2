@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -pthread  # C++11 standard and pthread library flag
+CXXFLAGS = -std=c++11 -lpthread  # C++11 standard and pthread library flag
 SOURCES = main.cpp helper.cpp WriteOutput.cpp  
 OBJECTS = $(SOURCES:.cpp=.o)
 
