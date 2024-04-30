@@ -166,9 +166,6 @@ public:
             if(currentPassingLane ==  carDirection){
 
 
-                // actually should check the first one in the queue to pass the bridge
-                // int curr_carID = currentPassingLane == 0 ? leftWaitingCars.front() : rightWaitingCars.front();
-
                 int curr_carID = getFirstCarInQueue(carDirection);
                 // if the car is the first one in the queue
                 if(curr_carID == car.carID){
@@ -177,6 +174,7 @@ public:
                     
                     // remove car.id from waiting cars in that queue
                     removeCarFromWaitingCars(car.carID, carDirection);
+
                     if(carsOnBridge > 0){
                         // wait 
                         printf("Car %d sleeping as PASS_DELAY\n", car.carID);
@@ -186,22 +184,27 @@ public:
                     } 
 
                     WriteOutput(car.carID, path.connectorType, path.connectorID, START_PASSING);
-                    carsOnBridge++;
+                    // carsOnBridge++;
+                    carsOnBridgeIncrement();
                     
-                    printf("Car: %d sleep TRAVEL_TIME to CONNECTOR\n", car.carID);
+                    // printf("Car: %d sleep TRAVEL_TIME to CONNECTOR\n", car.carID);
 
                     sameLane.notifyAll();
+
                     // passing time
                     sleep_milli(travelTime);
 
                     // finish passing the bridge
                     WriteOutput(car.carID, path.connectorType, path.connectorID, FINISH_PASSING);
-                    carsOnBridge--;
+                    // carsOnBridge--;
+                    carsOnBridgeDecrement();
                     break;
                     
                 } 
+
                              
                 sameLane.wait();
+                printf("Car %d same notified\n", car.carID);
                 continue;
 
                 
@@ -237,6 +240,7 @@ public:
         
               
     }
+    
     void pushToWaitingCars(int carID, int carDirection){
         __synchronized__;
         carDirection == 0 ? leftWaitingCars.push(carID) : rightWaitingCars.push(carID);
@@ -254,6 +258,15 @@ public:
         return carDirection == 0 ? leftWaitingCars.front() : rightWaitingCars.front();
     }
 
+    void carsOnBridgeIncrement(){
+        __synchronized__;
+        carsOnBridge++;
+    }
+    void carsOnBridgeDecrement(){
+        __synchronized__;
+        carsOnBridge--;
+    }
+
     void switchDirection(struct timespec &ts) {
         __synchronized__;
         
@@ -268,45 +281,7 @@ public:
         
         directionChange.notifyAll();
 
-        // printf("Notified all for the lane dir: %d\n", currentPassingLane);
     }
-
-
-    void conditionCheckSame(int curr_carID, int carDirection, Path& path, Car& car){
-        __synchronized__;
-
-
-        // remove car.id from waiting cars
-        // carDirection == 0 ? leftWaitingCars.pop() : rightWaitingCars.pop();
-
-        // start passing the bridge
-        // if there is car passing then wait
-        if(carsOnBridge > 0){
-            // wait 
-            printf("Car %d sleeping as PASS_DELAY\n", car.carID);
-            
-            sleep_milli(PASS_DELAY);                 
-
-        } 
-
-        WriteOutput(car.carID, path.connectorType, path.connectorID, START_PASSING);
-        carsOnBridge++;
-        
-        printf("Car: %d sleep TRAVEL_TIME to CONNECTOR\n", car.carID);
-
-        sameLane.notifyAll();
-        // passing time
-        sleep_milli(travelTime);
-
-        // finish passing the bridge
-        WriteOutput(car.carID, path.connectorType, path.connectorID, FINISH_PASSING);
-        carsOnBridge--;
-
-            
-        //  break; 
-         
-    }
-
 
     void normalize_timespec(struct timespec &ts) {
         while (ts.tv_nsec >= 1000000000) {
@@ -436,10 +411,12 @@ int main(){
     // print the parsed input
     printInput();
 
-    // InitWriteOutput();
+    
 
     // initalize the monitors
     initalizeMonitors();
+
+    InitWriteOutput();
 
     pthread_t threads[cars.size()]; // car threads array
 
