@@ -127,135 +127,162 @@ void printInput(){
 }
 
 class NarrowBridgeMonitor: public Monitor {
-    Condition sameLane;
-    Condition directionChange;
+    Condition leftLane;
+    Condition rightLane;
     int travelTime;
     int maxWaitTime;
     int currentPassingLane; // 0 for one way, 1 for the other
     int carsOnBridge;
-    // int waitingCars[2]; // 0 for one way, 1 for the other
-    queue<int> leftWaitingCars; queue<int> rightWaitingCars;
+
+
+    queue<int> WaitingCars[2];
     
 
 public:
-    NarrowBridgeMonitor(int _travelTime, int _maxWaitTime) : currentPassingLane(false), carsOnBridge(0), maxWaitTime(_maxWaitTime), sameLane(this), directionChange(this) {
+    NarrowBridgeMonitor(int _travelTime, int _maxWaitTime) : currentPassingLane(false), carsOnBridge(0), maxWaitTime(_maxWaitTime), leftLane(this), rightLane(this) {
         travelTime = _travelTime;
     }
     
 
     void pass(Car& car, Path& path) {
+        struct timespec ts;
 
         WriteOutput(car.carID, path.connectorType, path.connectorID, ARRIVE);
         // __synchronized__;
 
 
-        // path will provide the direction, connectorType, connectorID, info
+        // get the direction of the car
         int carDirection = path.from; // 0 for one way, 1 for the other
 
-
-       // Setup the timespec for the maximum wait time
-        struct timespec ts;
-        
-        // push to the related lane queue
         pushToWaitingCars(car.carID, carDirection);
-        // carDirection == 0 ? leftWaitingCars.push(car.carID) : rightWaitingCars.push(car.carID);
 
-        while (true)
-        {          
-            // if currarDently passing lane is the same as the direction of the car
-            if(currentPassingLane ==  carDirection){
+        while(true){
+
+            // this is very first car
+            if(WaitingCars[carDirection].front() == car.carID && WaitingCars[!carDirection].empty() && carsOnBridge == 0){
+                // if the bridge is empty, the car can pass
+
+                // currentPassingLane = carDirection;
+                switchDirection();
+
+                // WriteOutput(car.carID, path.connectorType, path.connectorID, START_PASSING);
+
+                // removeCarFromWaitingCars(car.carID, carDirection);
+
+                enterBridge(car.carID, carDirection, path);
+
+                sleep_milli(travelTime);
+
+                exitBridge(car.carID, carDirection, path);
+                break;
 
 
-                int curr_carID = getFirstCarInQueue(carDirection);
-                // if the car is the first one in the queue
-                if(curr_carID == car.carID){
-
-                    // conditionCheckSame(curr_carID, carDirection, path, car);
-                    
-                    // remove car.id from waiting cars in that queue
-                    removeCarFromWaitingCars(car.carID, carDirection);
-
-                    if(carsOnBridge > 0){
-                        // wait 
-                        printf("Car %d sleeping as PASS_DELAY\n", car.carID);
-                        
-                        sleep_milli(PASS_DELAY);                 
-
-                    } 
-
-                    WriteOutput(car.carID, path.connectorType, path.connectorID, START_PASSING);
-                    // carsOnBridge++;
-                    carsOnBridgeIncrement();
-                    
-                    // printf("Car: %d sleep TRAVEL_TIME to CONNECTOR\n", car.carID);
-
-                    sameLane.notifyAll();
-
-                    // passing time
-                    sleep_milli(travelTime);
-
-                    // finish passing the bridge
-                    WriteOutput(car.carID, path.connectorType, path.connectorID, FINISH_PASSING);
-                    // carsOnBridge--;
-                    carsOnBridgeDecrement();
-                    break;
-                    
-                } 
-
-                             
-                sameLane.wait();
-                printf("Car %d same notified\n", car.carID);
-                continue;
-
-                
             }
+            // if the car is the first car in the queue, it can pass
+            // check if the bridge is empty
+            if(carDirection == currentPassingLane){
+                
+                // if it is NOT the first car in the queue
+                if(carsOnBridge > 0){
+                    sleep_milli(PASS_DELAY);                 
+                }
+
+                enterBridge(car.carID, carDirection, path);
+
+                sleep_milli(travelTime);
+
+                exitBridge(car.carID, carDirection, path);
+
+                break;
+
+            }
+            // I am the car from the opposite direction
             else{
-                // time out
-                if (directionChange.timedwait(&ts) == ETIMEDOUT) {
-                    printf("Max wait time reached\n");
-                    switchDirection(ts);
+                if(WaitingCars[!carDirection].empty() && carsOnBridge == 0){
+                    // if the bridge is empty, the car can pass                    
                     continue;
                 }
-                // there are no more cars left on the passing lane
-                else if ( currentPassingLane == 0 && leftWaitingCars.empty() || currentPassingLane == 1 && rightWaitingCars.empty()){
-                    printf("No more cars left on the passing lane\n");
-                    switchDirection(ts);
-                    continue;
+                else{
+                    // if the bridge is not empty, wait for the direction change
+                    if(carDirection == 0){
+                        leftLane.wait();
+                    }
+                    else{
+                        rightLane.wait();
+                    }
                 }
-
-                // conditionCheckOpposite(carDirection, car, path, ts);
-                else {
-                    printf("Car %d WAIT OPPOSITE\n", car.carID);
-                    
-                    directionChange.wait();
-                    continue;
-                
-                }
-
                 
             }
+
+
+
+
+        }
+     
+           
+    }
+
+    void switchDirection(){
+        __synchronized__;
+        currentPassingLane = !currentPassingLane;
+        printf("passing lane SWITCHED %d\n", currentPassingLane);
+    
+    }
+
+   void enterBridge(int carID, int carDirection, Path& path){
+        __synchronized__;
+
+        // remove the car from the waiting cars
+        WaitingCars[carDirection].pop();
+
+        // now car on the bridge increment carsOnBridge
+        carsOnBridge++; // carsOnBridgeIncrement();      
+        WriteOutput(carID, path.connectorType, path.connectorID, START_PASSING);
+
+    }
+
+    void exitBridge(int carID, int carDirection, Path& path){
+        __synchronized__;
+        // remove the car from the bridge
+
+        carsOnBridge--; // carsOnBridgeDecrement();
+        WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
+
+        // if i am the last car in the bridge, notify the other lane
+        if(carsOnBridge == 0 && !WaitingCars[carDirection].empty()){
+            // notifyTheOtherLane();
+            carDirection == 0 ? rightLane.notifyAll() : leftLane.notifyAll();
         }
 
-        // printf("Car %d has passed the bridge\n", car.carID);
         
-              
+    }
+
+    // if the passing car is the last car in the current Lane notified the other lane
+    void notifyTheOtherLane(){
+        // __synchronized__;
+        if(currentPassingLane == 0){
+            rightLane.notifyAll();
+        }
+        else{
+            leftLane.notifyAll();
+        }
     }
     
     void pushToWaitingCars(int carID, int carDirection){
         __synchronized__;
-        carDirection == 0 ? leftWaitingCars.push(carID) : rightWaitingCars.push(carID);
+        WaitingCars[carDirection].push(carID);
         printf("Car %d is PUSHED to  %d waitLane\n", carID, carDirection);
     }
 
     void removeCarFromWaitingCars(int carID, int carDirection){
         __synchronized__;
-        carDirection == 0 ? leftWaitingCars.pop() : rightWaitingCars.pop();
+        WaitingCars[carDirection].pop();
         printf("Car %d is REMOVED from  %d waitLane\n", carID, carDirection);
     }
 
     int getFirstCarInQueue(int carDirection){
         __synchronized__;
-        return carDirection == 0 ? leftWaitingCars.front() : rightWaitingCars.front();
+        return WaitingCars[carDirection].front();
     }
 
     void carsOnBridgeIncrement(){
@@ -267,7 +294,7 @@ public:
         carsOnBridge--;
     }
 
-    void switchDirection(struct timespec &ts) {
+    void switchTimeoutDirection(struct timespec &ts) {
         __synchronized__;
         
         clock_gettime(CLOCK_REALTIME, &ts);
@@ -279,7 +306,11 @@ public:
 
         printf("passing lane SWITCHED %d\n", currentPassingLane);
         
-        directionChange.notifyAll();
+        if (currentPassingLane == 0) {
+            leftLane.notifyAll();
+        } else {
+            rightLane.notifyAll();
+        }
 
     }
 
@@ -339,22 +370,22 @@ public:
 
 
 // global monitor variables
-vector<NarrowBridgeMonitor> narrowBridgeMonitors;
-vector<FerryMonitor> ferryMonitors;
-vector<CrossRoadMonitor> crossRoadMonitors;
+vector<NarrowBridgeMonitor*> narrowBridgeMonitors;
+vector<FerryMonitor*> ferryMonitors;
+vector<CrossRoadMonitor*> crossRoadMonitors;
 
 
 void initalizeMonitors() {
     for (int i = 0; i < narrowBridges.size(); i++) {
-        narrowBridgeMonitors.push_back(NarrowBridgeMonitor(narrowBridges[i].travelTime, narrowBridges[i].maxWaitTime));
+        narrowBridgeMonitors.push_back(&NarrowBridgeMonitor(narrowBridges[i].travelTime, narrowBridges[i].maxWaitTime));
     }
 
     for (int i = 0; i < ferries.size(); i++) {
-        ferryMonitors.push_back(FerryMonitor(ferries[i].travelTime, ferries[i].maxWaitTime, ferries[i].capacity));
+        ferryMonitors.push_back(&FerryMonitor(ferries[i].travelTime, ferries[i].maxWaitTime, ferries[i].capacity));
     }
 
     for (int i = 0; i < crossRoads.size(); i++) {
-        crossRoadMonitors.push_back(CrossRoadMonitor(crossRoads[i].travelTime, crossRoads[i].maxWaitTime));
+        crossRoadMonitors.push_back(&CrossRoadMonitor(crossRoads[i].travelTime, crossRoads[i].maxWaitTime));
     }
 }
 
@@ -381,16 +412,16 @@ void* carThread(void *arg) {
         if (path.connectorType == 'N') {
             // narrow bridge
             // direction of the path
-            narrowBridgeMonitors[path.connectorID].pass(*car, path);
+            narrowBridgeMonitors[path.connectorID]->pass(*car, path);
             // printf("Narrow Bridge passing\n");
 
         } else if (path.connectorType == 'F') {
             // ferry
-            ferryMonitors[path.connectorID].pass(carID);
+            ferryMonitors[path.connectorID]->pass(carID);
             // printf("Ferry passing\n");
         } else if (path.connectorType == 'C') {
             // cross road
-            crossRoadMonitors[path.connectorID].pass(carID);
+            crossRoadMonitors[path.connectorID]->pass(carID);
             // printf("Cross Road passing\n");
         }
 
