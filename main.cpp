@@ -139,7 +139,7 @@ class NarrowBridgeMonitor: public Monitor {
     
 
 public:
-    NarrowBridgeMonitor(int _travelTime, int _maxWaitTime) : currentPassingLane(1), carsOnBridge(0), maxWaitTime(_maxWaitTime), leftLane(this), rightLane(this) {
+    NarrowBridgeMonitor(int _travelTime, int _maxWaitTime) : currentPassingLane(-1), carsOnBridge(0), maxWaitTime(_maxWaitTime), leftLane(this), rightLane(this) {
         travelTime = _travelTime;
     }
     
@@ -160,7 +160,7 @@ public:
 
             printf("CarID: %d, is entered loop again current lane: %d\n", car.carID, currentPassingLane);
             // this is very first car
-            if( currentPassingLane != carDirection && !(WaitingCars[carDirection].size() > 1) && WaitingCars[!carDirection].empty() && carsOnBridge == 0){
+            if( currentPassingLane == -1){
 
                 printf("CarID: %d, is the first car in the bridge\n", car.carID);
                 // if the bridge is empty, the car can pass
