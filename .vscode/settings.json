@@ -5,6 +5,7 @@
         "vector": "cpp",
         "array": "cpp",
         "list": "cpp",
-        "string_view": "cpp"
+        "string_view": "cpp",
+        "mutex": "cpp"
     }
 }
