@@ -133,6 +133,7 @@ class NarrowBridgeMonitor: public Monitor {
     int maxWaitTime;
     int currentPassingLane; // 0 for one way, 1 for the other
     int carsOnBridge;
+    // Lock myLock;
 
 
     queue<int> WaitingCars[2];
@@ -145,85 +146,69 @@ public:
     
 
     void pass(Car& car, Path& path) {
-        struct timespec ts;
-
-        WriteOutput(car.carID, path.connectorType, path.connectorID, ARRIVE);
-        // __synchronized__;
-
-
+ 
         // get the direction of the car
         int carDirection = path.from; // 0 for one way, 1 for the other
 
-        pushToWaitingCars(car.carID, carDirection);
-
+        // pushToWaitingCars(car.carID, carDirection, path);
+        
+        carDirection == 0 ? pushToLeftWaitingCars(car.carID, path) : pushToWaitingCars(car.carID, path);
         while(true){
+            
+    
+            // lock.unlock();
 
-            // this is very first car
-            if( currentPassingLane == -1){
-                // push the car to the waiting cars
-                // carDirection == 0 ? WaitingCars[0].push(car.carID) : WaitingCars[1].push(car.carID);
-
-                printf("CarID: %d, is the first car in the bridge\n", car.carID);
-                // if the bridge is empty, the car can pass
-
-                // currentPassingLane = carDirection;
-                switchDirectionToCarDirection(carDirection);
-
-                carDirection == 0 ? enterBridgeLeft(car.carID, path) : enterBridgeRight(car.carID, path);
-                sleep_milli(travelTime);
-                carDirection == 0 ? exitBridgeLeft(car.carID, path) : exitBridgeRight(car.carID, path);
-                
-                break;
-
-
+            // lock.lock();
+   
+            // it it is not the first car in the bridge, and there is car from the opposite direction, wait for it to pass
+            if(currentPassingLane != -1 && currentPassingLane != carDirection){
+                waitForOppositeSwitch(carDirection);
             }
 
-            // push the car to the waiting cars
-            // carDirection == 0 ? WaitingCars[0].push(car.carID) : WaitingCars[1].push(car.carID);
-
-            // I am the car from the opposite direction
-            // if the opposite direction is full then wait
-            while(currentPassingLane != carDirection && carsOnBridge > 0) {
-                printf("CarID: %d, is waiting for the opposite direction to be empty\n", car.carID);
-                carDirection == 0 ? leftLane.wait() : rightLane.wait();
-                printf("CarID: %d, is WOKE UP to be empty\n", car.carID);
-
-            }
-
-            printf("CarID: %d, is PASSED opposite check\n", car.carID);
-            // if the opposite direction is empty, switch the direction
-            if(currentPassingLane != carDirection && carsOnBridge == 0){
-                switchDirectionToCarDirection(carDirection);
-            }
-
-            // if the car is the first car in the queue, it can pass
-            // check if the bridge is empty
- 
-            // carDirection == 0 ? enterBridgeLeft(car.carID, path) : enterBridgeRight(car.carID, path);
+            // if the car is from the left can pass
             if(carDirection == 0){
+
+                waitForFrontPassLeft(car.carID);
+
+                // sleep if car has passed before
+                if(carsOnBridge > 0){
+                    sleep_milli(PASS_DELAY);
+                }
+
                 enterBridgeLeft(car.carID, path);
-            }else{
-                printf("CarID: %d, is ENTERING the bridge RIGHT FUNCTION, timestamp: %llu\n", car.carID, GetTimestamp());
+                notifyLeftLane();
+            }
+            else{
+
+                waitForFrontPassRight(car.carID);
+
+                // sleep if car has passed before
+                if(carsOnBridge > 0){
+                    sleep_milli(PASS_DELAY);
+                }
+
                 enterBridgeRight(car.carID, path);
+                notifyRightLane();
             }
 
             sleep_milli(travelTime);
 
             if(carDirection == 0){
                 exitBridgeLeft(car.carID, path);
-            }else{
+                notifyRightLane();
+            }
+            else{
                 exitBridgeRight(car.carID, path);
+                notifyLeftLane();
             }
 
-            // carDirection == 0 ? exitBridgeLeft(car.carID, path) : exitBridgeRight(car.carID, path);
-            
 
             break;
 
             
 
         }
-     
+   
            
     }
 
@@ -234,70 +219,66 @@ public:
     
     }
 
-    void pushToWaitingCars(int carID, int carDirection){
+    void waitForOppositeSwitch(int carDirection){
         __synchronized__;
-        WaitingCars[carDirection].push(carID);
-        printf("CarID: %d, pushed to the waiting cars, direction: %d\n", carID, carDirection);
+        while(currentPassingLane != carDirection && carsOnBridge > 0) {            
+                carDirection == 0 ? leftLane.wait() : rightLane.wait();
+
+        }
+    }
+
+    void waitForFrontPassLeft(int carID){
+        __synchronized__;
+        while(WaitingCars[0].front() != carID){
+            leftLane.wait();
+        }
+
+    }
+
+    void waitForFrontPassRight(int carID){
+        __synchronized__;
+        while(WaitingCars[1].front() != carID){
+                rightLane.wait();
+        }
+
+    }
+
+    void pushToLeftWaitingCars(int carID,Path& path){
+        __synchronized__;
+        if(currentPassingLane == -1){
+            currentPassingLane = 0;
+        }
+        WaitingCars[0].push(carID);
+        WriteOutput(carID, path.connectorType, path.connectorID, ARRIVE);
+
+    }
+
+    void pushToWaitingCars(int carID,Path& path){
+        __synchronized__;
+        if(currentPassingLane == -1){
+            currentPassingLane = 1;
+        }
+        WaitingCars[1].push(carID);
+        WriteOutput(carID, path.connectorType, path.connectorID, ARRIVE);
     }
 
    void enterBridgeLeft(int carID, Path& path){
         __synchronized__;
 
-        // WaitingCars[0].push(carID);
-
-        // if the car is not the front of the queue, wait for the direction change
-        while(WaitingCars[0].front() != carID){
-            leftLane.wait();
-        }
-
-
-        // sleep if car has passed before
-        if(carsOnBridge > 0){
-            sleep_milli(PASS_DELAY);
-        }
-
-        printf("CarID: %d, is ENTERING the bridge, timestamp: %llu\n", carID, GetTimestamp());
+        printf("CarID: %d, is ENTERING LEFt the bridge, timestamp: %llu\n", carID, GetTimestamp());
 
         // remove the car from the waiting cars
         WaitingCars[0].pop();
-
-        
+       
         // now car on the bridge increment carsOnBridge
         carsOnBridge++;  
 
         WriteOutput(carID, path.connectorType, path.connectorID, START_PASSING);
 
-        
-
-        if(!WaitingCars[0].empty()){
-            leftLane.notifyAll();
-        }
-
-        // sleep for travel time
-        // sleep_milli(travelTime);
-
     }
 
     void enterBridgeRight(int carID, Path& path){
         __synchronized__;
-
-        // WaitingCars[1].push(carID);
-
-        // if the car is not the front of the queue, wait for the direction change
-        while(WaitingCars[1].front() != carID){
-            printf("CarID: %d, is NOT front thats waiting\n", carID);
-            rightLane.wait();
-        }
-
-        
-
-        // sleep if car has passed before
-        if(carsOnBridge > 0){
-            sleep_milli(PASS_DELAY);
-        }
-
-
-        printf("CarID: %d, is ENTERING the bridge, timestamp: %llu\n", carID, GetTimestamp());
 
         // remove the car from the waiting cars
         WaitingCars[1].pop();
@@ -305,26 +286,30 @@ public:
         carsOnBridge++;   
 
         WriteOutput(carID, path.connectorType, path.connectorID, START_PASSING);
-        
-            
-
-        // sleep for travel time
-        // sleep_milli(travelTime);
-
-        if(! WaitingCars[1].empty()){
-            rightLane.notifyAll();
-        }
-
-        // WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
 
     }
 
+    void notifyLeftLane(){
+        __synchronized__;
+        
+        if(!WaitingCars[0].empty()){
+            leftLane.notifyAll();
+        }
+    }
 
+    void notifyRightLane(){
+        __synchronized__;
+        
+        if(!WaitingCars[1].empty()){
+            rightLane.notifyAll();
+        }
+    }
+
+    
     void exitBridgeLeft(int carID, Path& path){
         __synchronized__;
-        // remove the car from the bridge
 
-        carsOnBridge--; // carsOnBridgeDecrement();
+        carsOnBridge--; 
 
         // if i am the last car in the bridge, notify the other lane
         if(carsOnBridge == 0 && !(WaitingCars[1].empty())){
@@ -332,20 +317,24 @@ public:
             WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
 
             // notifyTheOtherLane();
-            currentPassingLane = 1 ;  // switch the direction
-            printf("CarID: %d, notified the other Lane %d\n", carID, currentPassingLane);
+            currentPassingLane = 1 ;  // switch the direction        
             rightLane.notifyAll();
+            printf("CarID: %d, notified the other Lane %d\n", carID, currentPassingLane);
 
             return;
             
         }
+        else if(carsOnBridge == 0 && WaitingCars[1].empty() && WaitingCars[0].empty()){
+            printf("CarID: %d, is the last car in the bridge\n", carID);
+            currentPassingLane = -1;
+            WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
+            return;
+        }
 
         printf("CarID: %d, is NOT notified the opposite bridge, timestamp: %llu\n", carID, GetTimestamp());
 
-
         WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
-        return;
-       
+        return;  
         
     }
 
@@ -356,22 +345,20 @@ public:
         carsOnBridge--; 
 
         // if i am the last car in the bridge, notify the other lane
-        if(carsOnBridge == 0 && !(WaitingCars[0].empty())){
-
-            
+        if(carsOnBridge == 0 && !(WaitingCars[0].empty())){       
             WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
-            
-            // notifyTheOtherLane();
             currentPassingLane = 0 ;  // switch the direction
             printf("CarID: %d, notified the other Lane %d\n", carID, currentPassingLane);
-            leftLane.notifyAll();
-
-            
+            leftLane.notifyAll(); 
 
             return;
-
-
-            
+        
+        }
+        else if(carsOnBridge == 0 && WaitingCars[1].empty() && WaitingCars[0].empty()){
+            printf("CarID: %d, is the last car in the bridge\n", carID);
+            currentPassingLane = -1;
+            WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
+            return;
         }
 
         printf("CarID: %d, is NOT notified the opposite bridge, timestamp: %llu\n", carID, GetTimestamp());
@@ -380,42 +367,6 @@ public:
         WriteOutput(carID, path.connectorType, path.connectorID, FINISH_PASSING);
         return;
         
-    }
-
-    
-
-
-    void switchTimeoutDirection(struct timespec &ts) {
-        __synchronized__;
-        
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += maxWaitTime / 1000;
-        ts.tv_nsec += (maxWaitTime % 1000) * 1000000;
-        normalize_timespec(ts);
-
-        currentPassingLane = !currentPassingLane;
-
-        printf("passing lane SWITCHED %d\n", currentPassingLane);
-        
-        if (currentPassingLane == 0) {
-            leftLane.notifyAll();
-        } else {
-            rightLane.notifyAll();
-        }
-
-    }
-
-    void normalize_timespec(struct timespec &ts) {
-        while (ts.tv_nsec >= 1000000000) {
-            ts.tv_nsec -= 1000000000;
-            ts.tv_sec++;
-        }
-    }
-
-    long getCurrentTime() {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
     }
 
 };
