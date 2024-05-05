@@ -363,44 +363,74 @@ public:
         // ts.tv_sec += maxWaitTime;
 
         specialLockLeft.unlock();
-        // load the car
-        WriteOutput(car.carID, path.connectorType, path.from , ARRIVE);
+
+       
         
         if(path.from == 0){
             // load the car to the ferry
             specialLockLeft.lock();
+             // load the car
+            WriteOutput(car.carID, path.connectorType, path.from , ARRIVE);
             carsOnFerry[0]++;
-            specialLockLeft.unlock();
+            // specialLockLeft.unlock();
 
 
             // no more room for the cars
-            specialLockLeft.lock();
+            // specialLockLeft.lock();
             if(carsOnFerry[0] == capacity){
 
                 printf("Car %d is completed capacity check will notify everyone\n", car.carID);
+
                 WriteOutput(car.carID, path.connectorType , path.connectorID, START_PASSING);
+                
+                leftWay.notifyAll();
+                printf("Car %d is NOTIFIED everyone\n", car.carID);
+
+                printf("Car %d is SLEEPING TRAVEL TIME \n", car.carID);
+
                 specialLockLeft.unlock();
 
-                leftWay.notifyAll();
+                
                 sleep_milli(travelTime);
+
+                specialLockLeft.lock();
+
                 WriteOutput(car.carID, path.connectorType , path.connectorID, FINISH_PASSING);
+                carsOnFerry[0] = 0;
+
+                specialLockLeft.unlock();
                 // leftWayPass(car, path);
                 return;
 
-            } 
+            }
             else{
                 printf("Car %d is waiting for leftWay\n", car.carID);
-                leftWay.wait();
+                leftWay.wait(); // it automatically unlocks the lock
+
+
+                // specialLockLeft.lock();
                 WriteOutput(car.carID, path.connectorType , path.connectorID, START_PASSING);
 
-                leftWay.notifyAll();
+                // leftWay.notifyAll();
+                // specialLockLeft.unlock();
+                printf("Car %d is SLEEPING TRAVEL TIME \n", car.carID);
+
+                specialLockLeft.unlock();
+
                 sleep_milli(travelTime);
+
+                // should i lock here or not
+                specialLockLeft.lock();
                 WriteOutput(car.carID, path.connectorType , path.connectorID, FINISH_PASSING);
+                specialLockLeft.unlock();
+                return;
 
         }
    
 
     }
+
+
     }
 
 
