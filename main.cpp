@@ -148,7 +148,14 @@ public:
     
 
     void pass(Car& car, Path& path) {
-        
+
+        struct timespec ts;
+        realTime(ts); // time set
+        /* clock_gettime(CLOCK_REALTIME, &ts);  // Get the current time
+        ts.tv_sec += maxWaitTime / 1000;  // Add seconds part of maxWaitTime
+        ts.tv_nsec += (maxWaitTime % 1000) * 1000000;  // Add milliseconds part of maxWaitTime converted to nanoseconds
+
+         */
         // WHILE INTIT lock is auto set, so need to unlock it
         specialLock.unlock();
 
@@ -255,6 +262,21 @@ public:
                 break;
                 
             }
+            // timeout condition check
+            else if( currentPassingLane== 0 ? leftLane.timedwait(&ts) : rightLane.timedwait(&ts) == ETIMEDOUT){
+                printf("Car %d TIMEOUT happaned to lane %d: %llu\n", car.carID, currentPassingLane ,GetTimestamp());
+                specialLock.lock();
+                
+                currentPassingLane = !currentPassingLane;
+                
+                // notify the other direction cars
+                currentPassingLane == 0 ? rightLane.notifyAll() : leftLane.notifyAll();
+                
+                realTime(ts); //time set again
+                specialLock.unlock();
+                continue;
+
+            }
             // there no car on the passing lane
             else if( carsOnBridge[!carDirection]==0 && WaitingCars[!carDirection].empty()){ // carsOnBridge[!carDirection]==0 && 
                 printf("Car %d opposite direction EMPTY: %llu\n", car.carID, GetTimestamp());
@@ -278,6 +300,13 @@ public:
 
         }
 
+
+    }
+
+    void realTime(timespec& ts){
+        clock_gettime(CLOCK_REALTIME, &ts);  // Get the current time
+        ts.tv_sec += maxWaitTime / 1000;  // Add seconds part of maxWaitTime
+        ts.tv_nsec += (maxWaitTime % 1000) * 1000000;  // Add milliseconds part of maxWaitTime converted to nanoseconds
 
     }
 
@@ -329,6 +358,9 @@ public:
 
     void pass(Car& car, Path& path) {
         //__synchronized__
+        // struct timespec ts;
+        // clock_gettime(CLOCK_REALTIME, &ts);
+        // ts.tv_sec += maxWaitTime;
 
         specialLockLeft.unlock();
         // load the car
