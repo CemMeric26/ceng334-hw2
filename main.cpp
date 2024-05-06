@@ -275,8 +275,8 @@ public:
 
             }
             else{       
-                
-                specialLock.lock();
+
+                // specialLock.lock();
                 // time set
                 realTime(ts);
                 int timeout_return = currentPassingLane == 0 ? leftLane.timedwait(&ts) : rightLane.timedwait(&ts) ;
