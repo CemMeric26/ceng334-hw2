@@ -364,147 +364,128 @@ class FerryMonitor: public Monitor {
     int maxWaitTime;
     int capacity;
     vector<int> carsOnFerry;
-    Lock specialLockLeft;
-    // Lock specialLockRight;
-    int departCount;
-    bool firstCar;
+    // Lock specialLockLeft;
+
     struct timespec ts;
+    bool ferryPassing;
     // Lock specialLockRight;
 
 
 
 public:
-    FerryMonitor(int travelTime, int maxWaitTime, int capacity): leftWay(this), specialLockLeft(this), departFerry(this){
+    FerryMonitor(int travelTime, int maxWaitTime, int capacity): leftWay(this), departFerry(this){ //specialLockLeft(this), 
         this->travelTime = travelTime;
         this->maxWaitTime = maxWaitTime;
         this->capacity = capacity;
         carsOnFerry = {0, 0};
-        departCount = 0;
-        firstCar = true;
+        ferryPassing = false;
         
         
     }
 
-
-    
-    void pass(Car& car, Path& path) {
-        specialLockLeft.unlock();
-        
-        specialLockLeft.lock();
-        // time set
-        realTime(ts);
-        
-        
-        
+    void pass(Car& car, Path& path){
         
         if(path.from == 0){
+            loadCar_checkCapacity(car, path);
+            sleep_milli(travelTime);
+            finishPass(car, path);
+
+        }
+        else{
+            loadCar_checkCapacity(car, path);
+            sleep_milli(travelTime);
+            finishPass(car, path);
+        }
+        
+
+    }
+
+    void finishPass(Car& car, Path& path){
+        __synchronized__
+
+        WriteOutput(car.carID, path.connectorType , path.connectorID, FINISH_PASSING);
+
+    }
+
+    void loadCar_checkCapacity(Car& car, Path& path){
+        __synchronized__
+
+        if(carsOnFerry[0] == 0){
+            realTime(ts);
+        }
 
 
-            if(carsOnFerry[0] == capacity){
-                // printf("Car %d is the first car\n", car.carID);
-                departFerry.wait();
-                specialLockLeft.unlock();
+        if(ferryPassing){
+            // printf("Car %d is the waits the next ferry\n", car.carID);
+            departFerry.wait(); 
+            // printf("Car %d is woken up\n", car.carID);
+        }
 
-                specialLockLeft.lock();
-            }
 
-            
+        // load the car
+        WriteOutput(car.carID, path.connectorType, path.from , ARRIVE); //arrive once olabilir
+        carsOnFerry[0]++;
+        // printf("Car %d is loaded carCount is: %d\n", car.carID, carsOnFerry[0]);
 
-             // load the car
-            WriteOutput(car.carID, path.connectorType, path.from , ARRIVE);
-            carsOnFerry[0]++;
+        // no more room for the cars
+        if(carsOnFerry[0] == capacity){
 
-            // no more room for the cars
-            if(carsOnFerry[0] == capacity){
+            // printf("Car %d is completed capacity check will notify everyone\n", car.carID);
 
-                // printf("Car %d is completed capacity check will notify everyone\n", car.carID);
+            WriteOutput(car.carID, path.connectorType , path.connectorID, START_PASSING);
+            carsOnFerry[0]--; // check here
+            ferryPassing = true;
 
-                WriteOutput(car.carID, path.connectorType , path.connectorID, START_PASSING);
-                carsOnFerry[0]--;
-                
-                leftWay.notifyAll();
-                departFerry.notifyAll();
+            // printf("Car %d filled the ferry, carsOnferr: %d, ferrypasing:%d \n", car.carID, carsOnFerry[0], ferryPassing);
+            leftWay.notifyAll();
+        
+            return;
 
-                // printf("Car %d is SLEEPING TRAVEL TIME \n", car.carID);
-
-                specialLockLeft.unlock();
-                
-                sleep_milli(travelTime);
-
-                specialLockLeft.lock();
-
-                WriteOutput(car.carID, path.connectorType , path.connectorID, FINISH_PASSING);
-
-                // carsOnFerry[0]--;
-                specialLockLeft.unlock();
-
-                return;
-
-            }
-
-            else {  // if(carsOnFerry[0] < capacity )  /// waiting for the ferry to be full, or timeout
+        }
+        else { // waiting for the ferry to be full, or timeout
 
                 // wait for both timeout and previous ferry to depart 
+                // printf("Car %d is waiting for the ferry to be full\n", car.carID);
                 int timeout_return = leftWay.timedwait(&ts);
-                specialLockLeft.unlock();
-
-                // is everyone is waking up from timeout or should i notify them
-
-                
-
-                specialLockLeft.lock();
 
                 if(timeout_return == ETIMEDOUT){
                     // printf("TIMEOUT HAPPENED: timestamp: %llu\n", GetTimestamp());
                     // printf("Car %d is TIMEOUT\n", car.carID);
 
+                    // time set
                     realTime(ts);
                     WriteOutput(car.carID, path.connectorType , path.connectorID, START_PASSING);
                     carsOnFerry[0]--;
-                    // leftWay.notifyAll();
+                    ferryPassing = true;
 
-                    // printf("Car %d is SLEEPING TRAVEL TIME \n", car.carID);
+                    if(carsOnFerry[0] == 0){
+                        ferryPassing = false;  
+                        departFerry.notifyAll();
+                    }
 
-                    specialLockLeft.unlock();
-
-                    sleep_milli(travelTime);
-
-                    // should i lock here or not
-                    specialLockLeft.lock();
-                    WriteOutput(car.carID, path.connectorType , path.connectorID, FINISH_PASSING);
-                    // carsOnFerry[0]--;
-
-                    specialLockLeft.unlock();
                     return;
                 }
+                else{
+                    WriteOutput(car.carID, path.connectorType , path.connectorID, START_PASSING);
 
-                WriteOutput(car.carID, path.connectorType , path.connectorID, START_PASSING);
+                    carsOnFerry[0]--;
+                    // printf("Car %d is unloaded carCount is: %d\n", car.carID, carsOnFerry[0]);
 
-                carsOnFerry[0]--;
+                    if(carsOnFerry[0] == 0){
+                        // printf("Car %d is the last car\n", car.carID);
+                        ferryPassing = false;
+                        departFerry.notifyAll();
+                    }
+                    return;
 
-
-                specialLockLeft.unlock();
-
-                sleep_milli(travelTime);
-
-                // should i lock here or not
-                specialLockLeft.lock();
-                WriteOutput(car.carID, path.connectorType , path.connectorID, FINISH_PASSING);
-                
-                // carsOnFerry[0]--;
-
-
-
-                specialLockLeft.unlock();
-                return;
+                }
+       
                 
             }
-        }
-
-
-    }
-        
     
+    }
+
+ 
      void realTime(timespec& ts){
         clock_gettime(CLOCK_REALTIME, &ts);  // Get the current time
         
