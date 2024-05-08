@@ -301,16 +301,33 @@ public:
 class CrossRoadMonitor: public Monitor {
     int travelTime;
     int maxWaitTime;
+    Lock specialLock;
+    int currentPassingLane; // four possible option
+
+    // Condition zeroLane; Condition oneLane; Condition twoLane; Condition threeLane;
+    vector<Condition*> crossLanes;
+
+    queue<int> WaitingCars[4];
+    vector<int> carsOnBridge; // 4 carsOnBridge for each lane
 
 public:
-    CrossRoadMonitor(int travelTime, int maxWaitTime) {
+    CrossRoadMonitor(int travelTime, int maxWaitTime):specialLock(this) {
         this->travelTime = travelTime;
         this->maxWaitTime = maxWaitTime;
+        carsOnBridge = {0, 0, 0, 0};
+        currentPassingLane = -1;
+        
+        Condition* zeroLane = new Condition(this); Condition* oneLane = new Condition(this); Condition* twoLane = new Condition(this); Condition* threeLane = new Condition(this);
+
+        crossLanes.push_back(zeroLane); crossLanes.push_back(oneLane); crossLanes.push_back(twoLane); crossLanes.push_back(threeLane);
+
         
     }
 
+
+
     void pass(int carId) {
-        __synchronized__;
+        // __synchronized__;
         ;
     }
     
