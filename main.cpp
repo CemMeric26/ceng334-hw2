@@ -245,7 +245,7 @@ public:
                 realTime(ts); //time set again
                 
                 // notify the other direction cars
-                path.from == 0 ? rightLane.notifyAll() : leftLane.notifyAll();
+                path.from == 0 ? leftLane.notifyAll() : rightLane.notifyAll();
                 specialLock.unlock();
                 continue;
 
@@ -309,6 +309,7 @@ class CrossRoadMonitor: public Monitor {
 
     queue<int> WaitingCars[4];
     vector<int> carsOnBridge; // 4 carsOnBridge for each lane
+    struct timespec ts;
 
 public:
     CrossRoadMonitor(int travelTime, int maxWaitTime):specialLock(this) {
@@ -326,11 +327,117 @@ public:
 
 
 
-    void pass(int carId) {
-        // __synchronized__;
-        ;
+    void pass(Car& car, Path& path) {
+
+        while(true)
+        {
+            if(currentPassingLane == path.from){
+
+                // if it is not the front car or there is car passing then wait
+                while(carsOnBridge[!path.from] > 0  || WaitingCars[path.from].front() != car.carID){ 
+
+                    crossLanes[path.from]->wait(); 
+                }
+
+                  // UNLOCK SET
+                specialLock.unlock(); 
+
+                // if it is the front car, PASS DELAY
+                if(carsOnBridge[path.from]>0){
+                    // printf("Car %d is PASS_DELAYING timestamp: %llu\n", car.carID, GetTimestamp());
+                    sleep_milli(PASS_DELAY);
+                }
+
+
+                //LOCK SET
+                specialLock.lock();
+
+
+                WaitingCars[path.from].pop();
+                WriteOutput(car.carID, path.connectorType, path.connectorID, START_PASSING);
+                
+
+                carsOnBridge[path.from]++;
+
+                // NOTIFY THE NEXT CAR
+                crossLanes[path.from]->notifyAll();
+
+                specialLock.unlock();   // UNLOCK SET
+
+
+                // SLEEP FOR TRAVEL TIME
+                sleep_milli(travelTime);
+                
+                // LOCK SET
+                specialLock.lock();
+                // FINISH PASSING & DECREASE THE CARS ON BRIDGE
+                WriteOutput(car.carID, path.connectorType, path.connectorID, FINISH_PASSING);
+                carsOnBridge[path.from]--;
+
+
+                // if i am the last car of our lane notify the opposite lane only if:
+                // need to check the waiting  in order from path.from 
+                if( !(WaitingCars[(path.from+1) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
+                    
+                    // change the passing lane to that direction
+                    crossLanes[(path.from+1) % 4]->notifyAll();
+                    
+                }
+                else if( !(WaitingCars[(path.from+2) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
+                    
+                    // change the passing lane to that direction
+                    crossLanes[(path.from+2) % 4]->notifyAll();
+                    
+                    
+                }
+                else if( !(WaitingCars[(path.from+3) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
+                    
+                    // change the passing lane to opposite direction
+                    crossLanes[(path.from+3) % 4]->notifyAll();
+                    
+                }
+
+                specialLock.unlock();   // UNLOCK SET     
+
+                break;
+                
+            }
+            // there are no cars on the current passing lane
+            else if( carsOnBridge[(path.from+1) % 4] && WaitingCars[(path.from+1) % 4].empty() && 
+                     carsOnBridge[(path.from+2) % 4] && WaitingCars[(path.from+2) % 4].empty() && 
+                     carsOnBridge[(path.from+3) % 4] && WaitingCars[(path.from+3) % 4].empty()){ // carsOnBridge[!path.from]==0 && 
+
+                currentPassingLane = path.from;
+                realTime(ts); //time set again
+                
+                // notify the other direction cars
+                crossLanes[path.from]->notifyAll();
+                specialLock.unlock();
+                continue;
+
+            }
+            // timeout condition check
+            else{
+                ;
+            }
+
+
+        }
     }
-    
+
+    void realTime(timespec& ts){
+        clock_gettime(CLOCK_REALTIME, &ts);  // Get the current time
+        
+        ts.tv_sec += maxWaitTime/1000;
+        ts.tv_nsec += (maxWaitTime%1000)*1000000;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+
+    }
+        
+  // ------------------------
 };
 
 
@@ -642,7 +749,7 @@ void* carThread(void *arg) {
             // printf("Ferry passing\n");
         } else if (path.connectorType == 'C') {
             // cross road
-            crossRoadMonitors[path.connectorID]->pass(carID);
+            crossRoadMonitors[path.connectorID]->pass(*car, path);
             // printf("Cross Road passing\n");
         }
 
