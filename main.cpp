@@ -801,7 +801,8 @@ void* carThread(void *arg) {
         WriteOutput(carID, path.connectorType, path.connectorID, TRAVEL);
 
         // Sleep for TravelTime milliseconds
-        sleep_milli(car->travelTime); 
+        sleep_milli(car->travelTime);
+        // printf("Car %d is traveled to connector %c%d timestamp: %llu\n", carID, path.connectorType, path.connectorID, GetTimestamp()); 
 
         // pass the connector
         if (path.connectorType == 'N') {
@@ -836,7 +837,7 @@ int main(){
     parseInput();
 
     // print the parsed input
-     printInput();
+    //printInput();
 
 
     // initalize the monitors
