@@ -328,13 +328,29 @@ public:
 
 
     void pass(Car& car, Path& path) {
+        // WHILE INTIT lock is auto set, so need to unlock it
+        specialLock.unlock();
+
+
+        // LOCK SET
+        specialLock.lock();
+
+        if(currentPassingLane == -1){
+
+            // first car time set
+            realTime(ts); // time set
+            currentPassingLane = path.from;
+        } 
+
+        WaitingCars[path.from].push(car.carID);
+        WriteOutput(car.carID, path.connectorType, path.connectorID, ARRIVE);
 
         while(true)
         {
             if(currentPassingLane == path.from){
 
                 // if it is not the front car or there is car passing then wait
-                while(carsOnBridge[!path.from] > 0  || WaitingCars[path.from].front() != car.carID){ 
+                while(carsOnBridge[ (path.from+1) % 4] > 0 || carsOnBridge[ (path.from+2) % 4] || carsOnBridge[ (path.from+3) % 4] || WaitingCars[path.from].front() != car.carID){ 
 
                     crossLanes[path.from]->wait(); 
                 }
@@ -402,11 +418,13 @@ public:
                 break;
                 
             }
-            // there are no cars on the current passing lane
-            else if( carsOnBridge[(path.from+1) % 4] && WaitingCars[(path.from+1) % 4].empty() && 
-                     carsOnBridge[(path.from+2) % 4] && WaitingCars[(path.from+2) % 4].empty() && 
-                     carsOnBridge[(path.from+3) % 4] && WaitingCars[(path.from+3) % 4].empty()){ // carsOnBridge[!path.from]==0 && 
+            // there are no cars on the current passing lane, check the current possible direciton
+            else if( carsOnBridge[(path.from+1) % 4] == 0 && WaitingCars[(path.from+1) % 4].empty() && 
+                     carsOnBridge[(path.from+2) % 4] == 0 && WaitingCars[(path.from+2) % 4].empty() && 
+                     carsOnBridge[(path.from+3) % 4] == 0 && WaitingCars[(path.from+3) % 4].empty()){ // carsOnBridge[!path.from]==0 && 
 
+                // There are no more cars left on the current Direction then
+                // Switch the passing lane to the next non-empty Direction
                 currentPassingLane = path.from;
                 realTime(ts); //time set again
                 
@@ -418,7 +436,24 @@ public:
             }
             // timeout condition check
             else{
-                ;
+                // we need to check the waiting cars in order from path.from
+                // time set
+                // printf("Car %d is waiting for opposite direction timestamp: %llu\n", car.carID, GetTimestamp());
+                int timeout_return = crossLanes[path.from]->timedwait(&ts);
+                
+                // timeout condition check
+                if(timeout_return == ETIMEDOUT){
+                    // printf("TIMEOUT HAPPENED: timestamp: %llu\n", GetTimestamp());
+
+                    currentPassingLane = path.from;
+                    realTime(ts); //time set again
+ 
+                    specialLock.unlock();
+                    continue;
+
+                }
+                specialLock.unlock();
+                continue;
             }
 
 
