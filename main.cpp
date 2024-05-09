@@ -266,7 +266,7 @@ public:
                 // path.from == 0 ? leftLane.notifyAll() : rightLane.notifyAll();
                 path.from == 0 ? pthread_cond_broadcast(&leftLane) : pthread_cond_broadcast(&rightLane);
                 //specialLock.unlock();
-                pthread_mutex_unlock(&mut);
+                //pthread_mutex_unlock(&mut);
                 continue;
 
             }// there are cars on the other lane
@@ -285,12 +285,12 @@ public:
                     realTime(ts); //time set again
  
                     //specialLock.unlock();
-                    pthread_mutex_unlock(&mut);
+                    // pthread_mutex_unlock(&mut);
                     continue;
 
                 }
                 //specialLock.unlock();
-                pthread_mutex_unlock(&mut);
+                // pthread_mutex_unlock(&mut);
                 continue;
 
 
@@ -491,7 +491,7 @@ public:
                 // crossLanes[currentPassingLane]->notifyAll();
                 pthread_cond_broadcast(crossLanes[currentPassingLane]);
                 // specialLock.unlock();
-                pthread_mutex_unlock(&mut);
+                // pthread_mutex_unlock(&mut);
                 continue;
 
             }
@@ -526,12 +526,12 @@ public:
                     realTime(ts); //time set again
  
                     // specialLock.unlock();
-                    pthread_mutex_unlock(&mut);
+                    // pthread_mutex_unlock(&mut);
                     continue;
 
                 }
                 // specialLock.unlock();
-                pthread_mutex_unlock(&mut);
+                // pthread_mutex_unlock(&mut);
                 continue;
             }
 
