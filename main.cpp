@@ -419,17 +419,34 @@ public:
                 
             }
             // there are no cars on the current passing lane, check the current possible direciton
-            else if( carsOnBridge[(path.from+1) % 4] == 0 && WaitingCars[(path.from+1) % 4].empty() && 
+            else if(carsOnBridge[currentPassingLane % 4] == 0 && WaitingCars[currentPassingLane % 4].empty() ){ // carsOnBridge[!path.from]==0 && 
+
+            /*
+            carsOnBridge[(path.from+1) % 4] == 0 && WaitingCars[(path.from+1) % 4].empty() && 
                      carsOnBridge[(path.from+2) % 4] == 0 && WaitingCars[(path.from+2) % 4].empty() && 
-                     carsOnBridge[(path.from+3) % 4] == 0 && WaitingCars[(path.from+3) % 4].empty()){ // carsOnBridge[!path.from]==0 && 
+                     carsOnBridge[(path.from+3) % 4] == 0 && WaitingCars[(path.from+3) % 4].empty()
+            */
 
                 // There are no more cars left on the current Direction then
                 // Switch the passing lane to the next non-empty Direction
-                currentPassingLane = path.from;
+                // currentPassingLane = path.from;
+                if(!WaitingCars[(currentPassingLane+1) % 4].empty()){
+                    currentPassingLane = (currentPassingLane+1) % 4;
+                }
+                else if(!WaitingCars[(currentPassingLane+2) % 4].empty()){
+                    currentPassingLane = (currentPassingLane+2) % 4;
+                }
+                else if(!WaitingCars[(currentPassingLane+3) % 4].empty()){
+                    currentPassingLane = (currentPassingLane+3) % 4;
+                }
+                else{
+                    currentPassingLane = path.from;
+                }
                 realTime(ts); //time set again
                 
                 // notify the other direction cars
-                crossLanes[path.from]->notifyAll();
+                // crossLanes[path.from]->notifyAll();
+                crossLanes[currentPassingLane]->notifyAll();
                 specialLock.unlock();
                 continue;
 
@@ -444,8 +461,22 @@ public:
                 // timeout condition check
                 if(timeout_return == ETIMEDOUT){
                     // printf("TIMEOUT HAPPENED: timestamp: %llu\n", GetTimestamp());
+                    // Switch the passing lane to the next non-empty Direction;
 
-                    currentPassingLane = path.from;
+                    // currentPassingLane = path.from;
+                    if(!WaitingCars[(currentPassingLane+1) % 4].empty()){
+                        currentPassingLane = (currentPassingLane+1) % 4;
+                    }
+                    else if(!WaitingCars[(currentPassingLane+2) % 4].empty()){
+                        currentPassingLane = (currentPassingLane+2) % 4;
+                    }
+                    else if(!WaitingCars[(currentPassingLane+3) % 4].empty()){
+                        currentPassingLane = (currentPassingLane+3) % 4;
+                    }
+                    else{
+                        currentPassingLane = path.from;
+                    }
+
                     realTime(ts); //time set again
  
                     specialLock.unlock();
@@ -513,12 +544,14 @@ public:
     void pass(Car& car, Path& path){
         
         if(path.from == 0){
+            //printf("Car %d is passing from the left\n", car.carID);
             loadCar_checkCapacity(car, path);
             sleep_milli(travelTime);
             finishPass(car, path);
 
         }
         else{
+            //printf("Car %d is passing from the right\n", car.carID);
             loadCar_checkCapacityRight(car, path);
             sleep_milli(travelTime);
             finishPassRight(car, path);
@@ -556,7 +589,7 @@ public:
 
 
         // load the car
-        WriteOutput(car.carID, path.connectorType, path.from , ARRIVE); //arrive once olabilir
+        WriteOutput(car.carID, path.connectorType, path.connectorID , ARRIVE); //arrive once olabilir
         carsOnFerry[0]++;
         // printf("Car %d is loaded carCount is: %d\n", car.carID, carsOnFerry[0]);
 
@@ -634,7 +667,7 @@ public:
 
 
         // load the car
-        WriteOutput(car.carID, path.connectorType, path.from , ARRIVE); //arrive once olabilir
+        WriteOutput(car.carID, path.connectorType, path.connectorID , ARRIVE); //arrive once olabilir
         carsOnFerry[1]++;
         // printf("Car %d is loaded carCount is: %d\n", car.carID, carsOnFerry[0]);
 

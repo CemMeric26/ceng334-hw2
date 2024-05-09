@@ -49,7 +49,7 @@ void WriteOutputf(FILE *f, int carID, char connector_type, int connectorID, Acti
             fprintf(f, "Wrong argument format.\n");
             break;
     }
-    fflush(f);
+    // fflush(f);
     pthread_mutex_unlock(&mutexWrite);
 }
 
