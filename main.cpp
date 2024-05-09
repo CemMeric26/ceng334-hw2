@@ -127,14 +127,17 @@ void printInput(){
 }
 
 class NarrowBridgeMonitor: public Monitor {
-    Condition leftLane;
-    Condition rightLane;
+    // Condition leftLane;
+    // Condition rightLane;
+    pthread_cond_t leftLane;
+    pthread_cond_t rightLane;
     int travelTime;
     int maxWaitTime;
     int currentPassingLane; // 0 for one way, 1 for the other
     vector<int> carsOnBridge;
     // int carsOnBridge;
-    Lock specialLock;
+    // Lock specialLock;
+    pthread_mutex_t  mut; 
     struct timespec ts;
 
 
@@ -142,30 +145,30 @@ class NarrowBridgeMonitor: public Monitor {
     
 
 public:
-    NarrowBridgeMonitor(int _travelTime, int _maxWaitTime) : currentPassingLane(-1),  maxWaitTime(_maxWaitTime), leftLane(this), rightLane(this), specialLock(this) {
+    NarrowBridgeMonitor(int _travelTime, int _maxWaitTime) : currentPassingLane(-1),  maxWaitTime(_maxWaitTime) { // , specialLock(this) , leftLane(this), rightLane(this)
         carsOnBridge = {0, 0};
         travelTime = _travelTime;
+        pthread_mutex_init(&mut, NULL);
+        pthread_cond_init(&leftLane, NULL);
+        pthread_cond_init(&rightLane, NULL);
     }
-    
+    // pthread_mutex_lock(&owner->mut); 
+    // pthread_mutex_unlock(&owner->mut);
 
     void pass(Car& car, Path& path) {
       
-        
-        // time set here or in the setting currentLane?
-
         // WHILE INTIT lock is auto set, so need to unlock it
-        specialLock.unlock();
-
-        // int carDirection = path.from;
-
+        // specialLock.unlock();
 
         // LOCK SET
-        specialLock.lock();
+        // specialLock.lock();
+        pthread_mutex_lock(&mut);
 
         if(currentPassingLane == -1){
 
             // first car time set
             realTime(ts); // time set
+            //printf("Car %d is the first car timestamp: %llu\n", car.carID, GetTimestamp());
             currentPassingLane = path.from;
         } 
 
@@ -178,24 +181,16 @@ public:
                 // if it is not the front car, wait
                 // if There is car passing the Wait, can be inside currentPassingLane == path.from
 
-                /* if(carsOnBridge[!path.from] > 0 ){        // && WaitingCars[!path.from].empty()
-                    // specialLock.unlock();          
-                    path.from == 0 ? leftLane.wait() : rightLane.wait();
-                } */
-
-                // if it is not the front car, wait
+                // if it is not the front car or there is car passing then wait
                 while(carsOnBridge[!path.from] > 0  || WaitingCars[path.from].front() != car.carID){ // there is a problem here
-                    //specialLock.unlock();
-                    // printf("Car %d is waiting for FRONT timestamp: %llu\n", car.carID, GetTimestamp());
-                    
-                    // path.from == 0 ? leftLane.notifyAll() : rightLane.notifyAll(); //not sure here
-                    
-                    // specialLock.unlock();
-                    path.from == 0  ? leftLane.wait() : rightLane.wait(); // i am hoping that wait will auotamatically release the lock
+
+                    // path.from == 0  ? leftLane.wait() : rightLane.wait(); // i am hoping that wait will auotamatically release the lock
+                    path.from == 0 ? pthread_cond_wait(&leftLane, &mut) : pthread_cond_wait(&rightLane, &mut);
                 }
 
                   // UNLOCK SET
-                specialLock.unlock(); 
+                // specialLock.unlock(); 
+                pthread_mutex_unlock(&mut);
 
                 // if it is the front car, PASS DELAY
                 if(carsOnBridge[path.from]>0){
@@ -206,7 +201,8 @@ public:
 
 
                 //LOCK SET
-                specialLock.lock();
+                //specialLock.lock();
+                pthread_mutex_lock(&mut);
 
 
                 WaitingCars[path.from].pop();
@@ -215,30 +211,29 @@ public:
 
                 carsOnBridge[path.from]++;
 
-                // printf("Car %d is passing timestamp: %llu\n", car.carID, GetTimestamp());
                 // NOTIFY THE NEXT CAR
-                // path.from == 0 ? leftLane.notifyAll() : rightLane.notifyAll();
 
                 if(path.from == 0){
                     //printf("Car %d is NOTIFIED the same direction timestamp: %llu\n", car.carID, GetTimestamp());
-                    leftLane.notifyAll();
+                    //leftLane.notifyAll();
+                    pthread_cond_broadcast(&leftLane);
                 }else{
                     //printf("Car %d is NOTIFIED the same direction timestamp: %llu\n", car.carID, GetTimestamp());
-                    rightLane.notifyAll();
+                    //rightLane.notifyAll();
+                    pthread_cond_broadcast(&rightLane);
                 }
 
-
-                // printf("Car %d is NOTIFIED the same direction timestamp: %llu\n", car.carID, GetTimestamp());
-
-                specialLock.unlock();   // UNLOCK SET
+                // specialLock.unlock();   // UNLOCK SET
+                pthread_mutex_unlock(&mut);
 
 
                 // SLEEP FOR TRAVEL TIME
-                // printf("Car %d is sleeping travel timestamp: %llu\n", car.carID, GetTimestamp());
                 sleep_milli(travelTime);
                 
                 // LOCK SET
-                specialLock.lock();
+                //specialLock.lock();
+                pthread_mutex_lock(&mut);
+
                 // FINISH PASSING & DECREASE THE CARS ON BRIDGE
                 WriteOutput(car.carID, path.connectorType, path.connectorID, FINISH_PASSING);
                 carsOnBridge[path.from]--;
@@ -250,62 +245,52 @@ public:
                 if( !(WaitingCars[!path.from].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
                     
                     // change the passing lane to opposite direction
-                    // printf("Car %d the last car of its direction NOTIFIYING OTHER LANE: %llu\n", car.carID, GetTimestamp());
-           
-                    // path.from == 0 ? currentPassingLane = 1 : currentPassingLane = 0;
                     
-                    path.from == 0 ? rightLane.notifyAll() : leftLane.notifyAll();
+                    // path.from == 0 ? rightLane.notifyAll() : leftLane.notifyAll();
+                    path.from == 0 ? pthread_cond_broadcast(&rightLane) : pthread_cond_broadcast(&leftLane);
                     
                 }
-                specialLock.unlock();   // UNLOCK SET     
+                //specialLock.unlock();   // UNLOCK SET 
+                pthread_mutex_unlock(&mut);    
 
                 break;
                 
             }// timeout condition check
             // there no car on the passing lane
             else if( carsOnBridge[!path.from]==0 && WaitingCars[!path.from].empty()){ // carsOnBridge[!path.from]==0 && 
-                // printf("Car %d opposite direction EMPTY: %llu\n", car.carID, GetTimestamp());
-                // specialLock.lock();
 
                 path.from == 0 ? currentPassingLane = 0 : currentPassingLane = 1;
                 realTime(ts); //time set again
                 
                 // notify the other direction cars
-                path.from == 0 ? rightLane.notifyAll() : leftLane.notifyAll();
-                specialLock.unlock();
+                // path.from == 0 ? leftLane.notifyAll() : rightLane.notifyAll();
+                path.from == 0 ? pthread_cond_broadcast(&leftLane) : pthread_cond_broadcast(&rightLane);
+                //specialLock.unlock();
+                pthread_mutex_unlock(&mut);
                 continue;
 
             }// there are cars on the other lane
             else{       
 
-                // specialLock.lock();
                 // time set
                 // printf("Car %d is waiting for opposite direction timestamp: %llu\n", car.carID, GetTimestamp());
-                int timeout_return = path.from == 0 ? leftLane.timedwait(&ts) : rightLane.timedwait(&ts);
-
-                // specialLock.unlock();
-             
-                
-                // specialLock.lock();
-
-                ///printf("timeout return: %d\n", timeout_return);
+                // int timeout_return = path.from == 0 ? leftLane.timedwait(&ts) : rightLane.timedwait(&ts);
+                int timeout_return = path.from == 0 ? pthread_cond_timedwait(&leftLane, &mut, &ts) : pthread_cond_timedwait(&rightLane, &mut, &ts);
                 
                 // timeout condition check
                 if(timeout_return == ETIMEDOUT){
-                    // printf("TIMEOUT HAPPENED: timestamp: %llu\n", GetTimestamp());
-                    // currentPassingLane = !currentPassingLane;
+                    //printf("TIMEOUT HAPPENED: timestamp: %llu\n", GetTimestamp());
+
                     currentPassingLane = path.from;
                     realTime(ts); //time set again
-                    // notify the  direction cars
-   
-                    // currentPassingLane == 0 ? leftLane.notifyAll() : rightLane.notifyAll();
-                    
-                    
-                    specialLock.unlock();
+ 
+                    //specialLock.unlock();
+                    pthread_mutex_unlock(&mut);
                     continue;
 
                 }
-                specialLock.unlock();
+                //specialLock.unlock();
+                pthread_mutex_unlock(&mut);
                 continue;
 
 
@@ -339,19 +324,234 @@ public:
 class CrossRoadMonitor: public Monitor {
     int travelTime;
     int maxWaitTime;
+    // Lock specialLock;
+    pthread_mutex_t  mut; 
+    int currentPassingLane; // four possible option
+
+    // Condition zeroLane; Condition oneLane; Condition twoLane; Condition threeLane;
+    pthread_cond_t zeroLane; pthread_cond_t oneLane; pthread_cond_t twoLane; pthread_cond_t threeLane;
+
+    // vector<Condition*> crossLanes;
+    vector<pthread_cond_t*> crossLanes;
+
+    queue<int> WaitingCars[4];
+    vector<int> carsOnBridge; // 4 carsOnBridge for each lane
+    struct timespec ts;
 
 public:
-    CrossRoadMonitor(int travelTime, int maxWaitTime) {
+    CrossRoadMonitor(int travelTime, int maxWaitTime) { // specialLock(this)
         this->travelTime = travelTime;
         this->maxWaitTime = maxWaitTime;
+        carsOnBridge = {0, 0, 0, 0};
+        currentPassingLane = -1;
+        pthread_mutex_init(&mut, NULL);
+        
+        // Condition* zeroLane = new Condition(this); Condition* oneLane = new Condition(this); Condition* twoLane = new Condition(this); Condition* threeLane = new Condition(this);
+
+
+        //crossLanes.push_back(zeroLane); crossLanes.push_back(oneLane); crossLanes.push_back(twoLane); crossLanes.push_back(threeLane);
+        pthread_cond_init(&zeroLane, NULL); pthread_cond_init(&oneLane, NULL); pthread_cond_init(&twoLane, NULL); pthread_cond_init(&threeLane, NULL);
+        crossLanes.push_back(&zeroLane); crossLanes.push_back(&oneLane); crossLanes.push_back(&twoLane); crossLanes.push_back(&threeLane);
+        
         
     }
 
-    void pass(int carId) {
-        __synchronized__;
-        ;
+
+
+    void pass(Car& car, Path& path) {
+        // WHILE INTIT lock is auto set, so need to unlock it
+        // specialLock.unlock();
+
+
+        // LOCK SET
+        // specialLock.lock();
+        pthread_mutex_lock(&mut);
+
+        if(currentPassingLane == -1){
+
+            // first car time set
+            realTime(ts); // time set
+            currentPassingLane = path.from;
+        } 
+
+        WaitingCars[path.from].push(car.carID);
+        WriteOutput(car.carID, path.connectorType, path.connectorID, ARRIVE);
+
+        while(true)
+        {
+            if(currentPassingLane == path.from){
+
+                // if it is not the front car or there is car passing then wait
+                while(carsOnBridge[ (path.from+1) % 4] > 0 || carsOnBridge[ (path.from+2) % 4] || carsOnBridge[ (path.from+3) % 4] || WaitingCars[path.from].front() != car.carID){ 
+
+                    // crossLanes[path.from]->wait(); 
+                    pthread_cond_wait(crossLanes[path.from], &mut);
+                }
+
+
+
+                  // UNLOCK SET
+                // specialLock.unlock(); 
+                pthread_mutex_unlock(&mut);
+
+                // if it is the front car, PASS DELAY
+                if(carsOnBridge[path.from]>0){
+                    // printf("Car %d is PASS_DELAYING timestamp: %llu\n", car.carID, GetTimestamp());
+                    sleep_milli(PASS_DELAY);
+                }
+
+
+                //LOCK SET
+                // specialLock.lock();
+                pthread_mutex_lock(&mut);
+
+
+                WaitingCars[path.from].pop();
+                WriteOutput(car.carID, path.connectorType, path.connectorID, START_PASSING);
+                
+
+                carsOnBridge[path.from]++;
+
+                // NOTIFY THE NEXT CAR
+                // crossLanes[path.from]->notifyAll();
+                pthread_cond_broadcast(crossLanes[path.from]);
+
+                //specialLock.unlock();   // UNLOCK SET
+                pthread_mutex_unlock(&mut);
+
+                // SLEEP FOR TRAVEL TIME
+                sleep_milli(travelTime);
+                
+                // LOCK SET
+                // specialLock.lock();
+                pthread_mutex_lock(&mut);
+                // FINISH PASSING & DECREASE THE CARS ON BRIDGE
+                WriteOutput(car.carID, path.connectorType, path.connectorID, FINISH_PASSING);
+                carsOnBridge[path.from]--;
+
+
+                // if i am the last car of our lane notify the opposite lane only if:
+                // need to check the waiting  in order from path.from 
+                if( !(WaitingCars[(path.from+1) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
+                    
+                    // change the passing lane to that direction
+                    // crossLanes[(path.from+1) % 4]->notifyAll();
+                    pthread_cond_broadcast(crossLanes[(path.from+1) % 4]);
+                    
+                }
+                else if( !(WaitingCars[(path.from+2) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
+                    
+                    // change the passing lane to that direction
+                    // crossLanes[(path.from+2) % 4]->notifyAll();
+                    pthread_cond_broadcast(crossLanes[(path.from+2) % 4]);
+                    
+                    
+                }
+                else if( !(WaitingCars[(path.from+3) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
+                    
+                    // change the passing lane to opposite direction
+                    // crossLanes[(path.from+3) % 4]->notifyAll();
+                    pthread_cond_broadcast(crossLanes[(path.from+3) % 4]);
+                    
+                }
+
+                // specialLock.unlock();   // UNLOCK SET     
+                pthread_mutex_unlock(&mut);
+                break;
+                
+            }
+            // there are no cars on the current passing lane, check the current possible direciton
+            else if(carsOnBridge[currentPassingLane % 4] == 0 && WaitingCars[currentPassingLane % 4].empty() ){ // carsOnBridge[!path.from]==0 && 
+
+            /*
+            carsOnBridge[(path.from+1) % 4] == 0 && WaitingCars[(path.from+1) % 4].empty() && 
+                     carsOnBridge[(path.from+2) % 4] == 0 && WaitingCars[(path.from+2) % 4].empty() && 
+                     carsOnBridge[(path.from+3) % 4] == 0 && WaitingCars[(path.from+3) % 4].empty()
+            */
+
+                // There are no more cars left on the current Direction then
+                // Switch the passing lane to the next non-empty Direction
+                // currentPassingLane = path.from;
+                if(!WaitingCars[(currentPassingLane+1) % 4].empty()){
+                    currentPassingLane = (currentPassingLane+1) % 4;
+                }
+                else if(!WaitingCars[(currentPassingLane+2) % 4].empty()){
+                    currentPassingLane = (currentPassingLane+2) % 4;
+                }
+                else if(!WaitingCars[(currentPassingLane+3) % 4].empty()){
+                    currentPassingLane = (currentPassingLane+3) % 4;
+                }
+                else{
+                    currentPassingLane = path.from;
+                }
+                realTime(ts); //time set again
+                
+                // notify the other direction cars
+                // crossLanes[path.from]->notifyAll();
+                // crossLanes[currentPassingLane]->notifyAll();
+                pthread_cond_broadcast(crossLanes[currentPassingLane]);
+                // specialLock.unlock();
+                pthread_mutex_unlock(&mut);
+                continue;
+
+            }
+            // timeout condition check
+            else{
+                // we need to check the waiting cars in order from path.from
+                // time set
+                // printf("Car %d is waiting for opposite direction timestamp: %llu\n", car.carID, GetTimestamp());
+
+                // int timeout_return = crossLanes[path.from]->timedwait(&ts);
+                int timeout_return = pthread_cond_timedwait(crossLanes[path.from], &mut, &ts);
+                
+                // timeout condition check
+                if(timeout_return == ETIMEDOUT){
+                    // printf("TIMEOUT HAPPENED: timestamp: %llu\n", GetTimestamp());
+                    // Switch the passing lane to the next non-empty Direction;
+
+                    // currentPassingLane = path.from;
+                    if(!WaitingCars[(currentPassingLane+1) % 4].empty()){
+                        currentPassingLane = (currentPassingLane+1) % 4;
+                    }
+                    else if(!WaitingCars[(currentPassingLane+2) % 4].empty()){
+                        currentPassingLane = (currentPassingLane+2) % 4;
+                    }
+                    else if(!WaitingCars[(currentPassingLane+3) % 4].empty()){
+                        currentPassingLane = (currentPassingLane+3) % 4;
+                    }
+                    else{
+                        currentPassingLane = path.from;
+                    }
+
+                    realTime(ts); //time set again
+ 
+                    // specialLock.unlock();
+                    pthread_mutex_unlock(&mut);
+                    continue;
+
+                }
+                // specialLock.unlock();
+                pthread_mutex_unlock(&mut);
+                continue;
+            }
+
+
+        }
     }
-    
+
+    void realTime(timespec& ts){
+        clock_gettime(CLOCK_REALTIME, &ts);  // Get the current time
+        
+        ts.tv_sec += maxWaitTime/1000;
+        ts.tv_nsec += (maxWaitTime%1000)*1000000;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+
+    }
+        
+  // ------------------------
 };
 
 
@@ -392,12 +592,14 @@ public:
     void pass(Car& car, Path& path){
         
         if(path.from == 0){
+            //printf("Car %d is passing from the left\n", car.carID);
             loadCar_checkCapacity(car, path);
             sleep_milli(travelTime);
             finishPass(car, path);
 
         }
         else{
+            //printf("Car %d is passing from the right\n", car.carID);
             loadCar_checkCapacityRight(car, path);
             sleep_milli(travelTime);
             finishPassRight(car, path);
@@ -435,7 +637,7 @@ public:
 
 
         // load the car
-        WriteOutput(car.carID, path.connectorType, path.from , ARRIVE); //arrive once olabilir
+        WriteOutput(car.carID, path.connectorType, path.connectorID , ARRIVE); //arrive once olabilir
         carsOnFerry[0]++;
         // printf("Car %d is loaded carCount is: %d\n", car.carID, carsOnFerry[0]);
 
@@ -513,7 +715,7 @@ public:
 
 
         // load the car
-        WriteOutput(car.carID, path.connectorType, path.from , ARRIVE); //arrive once olabilir
+        WriteOutput(car.carID, path.connectorType, path.connectorID , ARRIVE); //arrive once olabilir
         carsOnFerry[1]++;
         // printf("Car %d is loaded carCount is: %d\n", car.carID, carsOnFerry[0]);
 
@@ -647,7 +849,8 @@ void* carThread(void *arg) {
         WriteOutput(carID, path.connectorType, path.connectorID, TRAVEL);
 
         // Sleep for TravelTime milliseconds
-        sleep_milli(car->travelTime); 
+        sleep_milli(car->travelTime);
+        // printf("Car %d is traveled to connector %c%d timestamp: %llu\n", carID, path.connectorType, path.connectorID, GetTimestamp()); 
 
         // pass the connector
         if (path.connectorType == 'N') {
@@ -663,7 +866,7 @@ void* carThread(void *arg) {
             // printf("Ferry passing\n");
         } else if (path.connectorType == 'C') {
             // cross road
-            crossRoadMonitors[path.connectorID]->pass(carID);
+            crossRoadMonitors[path.connectorID]->pass(*car, path);
             // printf("Cross Road passing\n");
         }
 
@@ -682,7 +885,7 @@ int main(){
     parseInput();
 
     // print the parsed input
-     printInput();
+    //printInput();
 
 
     // initalize the monitors
