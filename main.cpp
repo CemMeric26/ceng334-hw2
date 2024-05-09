@@ -324,27 +324,35 @@ public:
 class CrossRoadMonitor: public Monitor {
     int travelTime;
     int maxWaitTime;
-    Lock specialLock;
+    // Lock specialLock;
+    pthread_mutex_t  mut; 
     int currentPassingLane; // four possible option
 
     // Condition zeroLane; Condition oneLane; Condition twoLane; Condition threeLane;
-    vector<Condition*> crossLanes;
+    pthread_cond_t zeroLane; pthread_cond_t oneLane; pthread_cond_t twoLane; pthread_cond_t threeLane;
+
+    // vector<Condition*> crossLanes;
+    vector<pthread_cond_t*> crossLanes;
 
     queue<int> WaitingCars[4];
     vector<int> carsOnBridge; // 4 carsOnBridge for each lane
     struct timespec ts;
 
 public:
-    CrossRoadMonitor(int travelTime, int maxWaitTime):specialLock(this) {
+    CrossRoadMonitor(int travelTime, int maxWaitTime) { // specialLock(this)
         this->travelTime = travelTime;
         this->maxWaitTime = maxWaitTime;
         carsOnBridge = {0, 0, 0, 0};
         currentPassingLane = -1;
+        pthread_mutex_init(&mut, NULL);
         
-        Condition* zeroLane = new Condition(this); Condition* oneLane = new Condition(this); Condition* twoLane = new Condition(this); Condition* threeLane = new Condition(this);
+        // Condition* zeroLane = new Condition(this); Condition* oneLane = new Condition(this); Condition* twoLane = new Condition(this); Condition* threeLane = new Condition(this);
 
-        crossLanes.push_back(zeroLane); crossLanes.push_back(oneLane); crossLanes.push_back(twoLane); crossLanes.push_back(threeLane);
 
+        //crossLanes.push_back(zeroLane); crossLanes.push_back(oneLane); crossLanes.push_back(twoLane); crossLanes.push_back(threeLane);
+        pthread_cond_init(&zeroLane, NULL); pthread_cond_init(&oneLane, NULL); pthread_cond_init(&twoLane, NULL); pthread_cond_init(&threeLane, NULL);
+        crossLanes.push_back(&zeroLane); crossLanes.push_back(&oneLane); crossLanes.push_back(&twoLane); crossLanes.push_back(&threeLane);
+        
         
     }
 
@@ -352,11 +360,12 @@ public:
 
     void pass(Car& car, Path& path) {
         // WHILE INTIT lock is auto set, so need to unlock it
-        specialLock.unlock();
+        // specialLock.unlock();
 
 
         // LOCK SET
-        specialLock.lock();
+        // specialLock.lock();
+        pthread_mutex_lock(&mut);
 
         if(currentPassingLane == -1){
 
@@ -375,11 +384,15 @@ public:
                 // if it is not the front car or there is car passing then wait
                 while(carsOnBridge[ (path.from+1) % 4] > 0 || carsOnBridge[ (path.from+2) % 4] || carsOnBridge[ (path.from+3) % 4] || WaitingCars[path.from].front() != car.carID){ 
 
-                    crossLanes[path.from]->wait(); 
+                    // crossLanes[path.from]->wait(); 
+                    pthread_cond_wait(crossLanes[path.from], &mut);
                 }
 
+
+
                   // UNLOCK SET
-                specialLock.unlock(); 
+                // specialLock.unlock(); 
+                pthread_mutex_unlock(&mut);
 
                 // if it is the front car, PASS DELAY
                 if(carsOnBridge[path.from]>0){
@@ -389,7 +402,8 @@ public:
 
 
                 //LOCK SET
-                specialLock.lock();
+                // specialLock.lock();
+                pthread_mutex_lock(&mut);
 
 
                 WaitingCars[path.from].pop();
@@ -399,16 +413,18 @@ public:
                 carsOnBridge[path.from]++;
 
                 // NOTIFY THE NEXT CAR
-                crossLanes[path.from]->notifyAll();
+                // crossLanes[path.from]->notifyAll();
+                pthread_cond_broadcast(crossLanes[path.from]);
 
-                specialLock.unlock();   // UNLOCK SET
-
+                //specialLock.unlock();   // UNLOCK SET
+                pthread_mutex_unlock(&mut);
 
                 // SLEEP FOR TRAVEL TIME
                 sleep_milli(travelTime);
                 
                 // LOCK SET
-                specialLock.lock();
+                // specialLock.lock();
+                pthread_mutex_lock(&mut);
                 // FINISH PASSING & DECREASE THE CARS ON BRIDGE
                 WriteOutput(car.carID, path.connectorType, path.connectorID, FINISH_PASSING);
                 carsOnBridge[path.from]--;
@@ -419,25 +435,28 @@ public:
                 if( !(WaitingCars[(path.from+1) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
                     
                     // change the passing lane to that direction
-                    crossLanes[(path.from+1) % 4]->notifyAll();
+                    // crossLanes[(path.from+1) % 4]->notifyAll();
+                    pthread_cond_broadcast(crossLanes[(path.from+1) % 4]);
                     
                 }
                 else if( !(WaitingCars[(path.from+2) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
                     
                     // change the passing lane to that direction
-                    crossLanes[(path.from+2) % 4]->notifyAll();
+                    // crossLanes[(path.from+2) % 4]->notifyAll();
+                    pthread_cond_broadcast(crossLanes[(path.from+2) % 4]);
                     
                     
                 }
                 else if( !(WaitingCars[(path.from+3) % 4].empty()) && carsOnBridge[path.from]==0){  // WaitingCars[path.from].empty() && 
                     
                     // change the passing lane to opposite direction
-                    crossLanes[(path.from+3) % 4]->notifyAll();
+                    // crossLanes[(path.from+3) % 4]->notifyAll();
+                    pthread_cond_broadcast(crossLanes[(path.from+3) % 4]);
                     
                 }
 
-                specialLock.unlock();   // UNLOCK SET     
-
+                // specialLock.unlock();   // UNLOCK SET     
+                pthread_mutex_unlock(&mut);
                 break;
                 
             }
@@ -469,8 +488,10 @@ public:
                 
                 // notify the other direction cars
                 // crossLanes[path.from]->notifyAll();
-                crossLanes[currentPassingLane]->notifyAll();
-                specialLock.unlock();
+                // crossLanes[currentPassingLane]->notifyAll();
+                pthread_cond_broadcast(crossLanes[currentPassingLane]);
+                // specialLock.unlock();
+                pthread_mutex_unlock(&mut);
                 continue;
 
             }
@@ -479,7 +500,9 @@ public:
                 // we need to check the waiting cars in order from path.from
                 // time set
                 // printf("Car %d is waiting for opposite direction timestamp: %llu\n", car.carID, GetTimestamp());
-                int timeout_return = crossLanes[path.from]->timedwait(&ts);
+
+                // int timeout_return = crossLanes[path.from]->timedwait(&ts);
+                int timeout_return = pthread_cond_timedwait(crossLanes[path.from], &mut, &ts);
                 
                 // timeout condition check
                 if(timeout_return == ETIMEDOUT){
@@ -502,11 +525,13 @@ public:
 
                     realTime(ts); //time set again
  
-                    specialLock.unlock();
+                    // specialLock.unlock();
+                    pthread_mutex_unlock(&mut);
                     continue;
 
                 }
-                specialLock.unlock();
+                // specialLock.unlock();
+                pthread_mutex_unlock(&mut);
                 continue;
             }
 
